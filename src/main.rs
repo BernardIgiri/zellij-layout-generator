@@ -1,13 +1,21 @@
 mod config;
 
+use clap::Parser;
 use config::{Config, Layout};
 use std::{error::Error, fs, path::Path};
 
+/// A CLI tool to generate Zellij layouts from templates
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Cli {
+    /// Path to the configuration file
+    #[arg(short, long)]
+    config: String,
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
-    let config_path = std::env::args()
-        .nth(1)
-        .ok_or("Usage: zellij-layout-gen <config_path>")?;
-    let config_contents = fs::read_to_string(&config_path)?;
+    let cli = Cli::parse();
+    let config_contents = fs::read_to_string(&cli.config)?;
 
     let project_config = parse_config(&config_contents)?;
     let template_contents = fs::read_to_string(&project_config.template)?;
