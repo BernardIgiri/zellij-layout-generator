@@ -1,6 +1,8 @@
-# Zellij Template Generator
+# Zellij Layout Generator
 
-**Example**
+Zellij Layout Generator for my dev Zellij template.
+
+## Example
 
 **Config:**
 
@@ -44,10 +46,10 @@ layout {
 }
 ```
 
-**Usage:**
+## Usage
 
 `zellij-layout-gen config.toml`
 
-**Install:**
+## Install
 
 `cargo install --path .`
