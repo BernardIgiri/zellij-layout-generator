@@ -24,3 +24,7 @@ watch = [
 **Usage:**
 
 `zellij-layout-gen config.toml`
+
+**Install:**
+
+`cargo install --path .`
