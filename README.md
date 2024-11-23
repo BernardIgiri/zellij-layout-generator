@@ -10,7 +10,7 @@ Zellij Layout Generator is a CLI tool for generating custom Zellij layout files 
 - **Broadcast watch commands**: Add the `broadcast` flag to any watch command to automatically enable `script -f` broadcasting for that pane. This will allow you to duplicate the output of shell commands to other terminals.
    - Example:
      ```
-     { name = "Dev Server", command = "npm run dev", broadcast = true }
+    { name = "Dev Server", command = ["npm", "run", "dev"], broadcast = true }
      ```
 
 ## Example
@@ -25,16 +25,16 @@ template = "layout_template.kdl"
 [[layout]]
 path = "projectA_layout.kdl"
 watch = [
-    { name = "Watcher", command = "npm run watch" },
-    { name = "Dev Server", command = "npm run dev", broadcast = true },
-    { name = "Logs", command = "tail -f logs/dev.log" }
+    { name = "Watcher", command = ["npm", "run", "watch"] },
+    { name = "Dev Server", command = ["npm", "run", "dev"], broadcast = true },
+    { name = "Logs", command = ["tail", "-f", "logs/dev.log"] }
 ]
 
 [[layout]]
 path = "projectB_layout.kdl"
 watch = [
-    { name = "Start Server", command = "yarn start" },
-    { name = "Build", command = "yarn build" },
+    { name = "Start Server", command = ["yarn", "start"] },
+    { name = "Build", command = ["yarn", "build"] },
 ]
 ```
 
@@ -44,7 +44,7 @@ watch = [
     - `path`: Output file for the layout.
     - `watch`: List of watch commands to include in the layout.
       - `name`: Pane name for the command.
-      - `command`: Command to run in the pane.
+      - `command`: Command to run in the pane, specified as an array of strings (e.g., `["npm", "run", "watch"]`).
       - `broadcast` (optional): If true, broadcasts input to all panes in this watch group.
 
 ### **Template File (KDL)**
