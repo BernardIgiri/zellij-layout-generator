@@ -1,11 +1,12 @@
 [package]
 name = "zellij-layout-generator"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 
 [dependencies]
 clap = { version = "4.5.21", features = ["derive"] }
 serde = { version = "1.0.215", features = ["derive"] }
+shell-quote = "0.7.1"
 toml = "0.8.19"
 
 [dev-dependencies]

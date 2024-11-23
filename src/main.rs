@@ -2,7 +2,10 @@ mod config;
 
 use clap::Parser;
 use config::{Config, Layout};
+use shell_quote::{QuoteRefExt, Sh};
 use std::{error::Error, fs, path::Path};
+
+const PLACEHOLDER: &str = "${WATCH_PANELS}";
 
 /// A CLI tool to generate Zellij layouts from templates
 #[derive(Parser, Debug)]
@@ -33,45 +36,63 @@ fn parse_config(config: &str) -> Result<Config, Box<dyn Error>> {
 
 fn generate_layouts(project_config: &Config, template: &str) -> Result<(), Box<dyn Error>> {
     for layout in &project_config.layouts {
-        let rendered_layout = render_layout(template, layout);
+        let rendered_layout = render_layout(template, layout)?;
         save_layout(layout.path.as_path(), &rendered_layout)?;
     }
     Ok(())
 }
 
-fn render_layout(template: &str, layout: &Layout) -> String {
+fn render_layout(template: &str, layout: &Layout) -> Result<String, Box<dyn Error>> {
     let watch_panels = layout
         .watch
         .iter()
-        .map(|watch_command| {
-            // Split the command into executable and args (if args are present)
-            let parts: Vec<&str> = watch_command.command.split_whitespace().collect();
-            let executable = parts[0];
-            let args = &parts[1..];
+        .map(|watch| {
+            // Adjust command based on the broadcast flag
+            let mut command = watch.command.clone();
+            if watch.broadcast {
+                command = vec![
+                    "script".into(),
+                    "-fec".into(),
+                    command.join(" "),
+                    ".broadcast".into(),
+                ];
+            }
 
-            if args.is_empty() {
+            let executable = &command[0];
+            let args = &command[1..];
+
+            Ok(if args.is_empty() {
                 // No args, render command on the same line
                 format!(
                     "pane name=\"{}\" command=\"{}\"",
-                    watch_command.name, executable
+                    watch.name,
+                    String::from_utf8(executable.quoted(Sh))?
                 )
             } else {
-                // With args, use child braces to include args
+                // Escape and format arguments safely
                 let args_formatted = args
                     .iter()
-                    .map(|arg| format!("\"{}\"", arg)) // Quote each argument
+                    .map(|arg| arg.quoted(Sh))
+                    .map(|arg: Vec<u8>| String::from_utf8(arg).expect("valid param"))
+                    .map(|arg| format!("\"{}\"", arg))
                     .collect::<Vec<_>>()
                     .join(" ");
                 format!(
                     "pane name=\"{}\" command=\"{}\" {{\n    args {}\n}}",
-                    watch_command.name, executable, args_formatted
+                    watch.name,
+                    String::from_utf8(executable.quoted(Sh)).expect("valid command"),
+                    args_formatted
                 )
-            }
+            })
         })
-        .collect::<Vec<_>>()
-        .join("\n");
+        .collect::<Result<Vec<_>, Box<dyn Error>>>()?;
 
-    template.replace("${WATCH_PANELS}", &watch_panels)
+    let watch_panels = watch_panels.join("\n");
+    if template.contains(PLACEHOLDER) {
+        Ok(template.replace(PLACEHOLDER, &watch_panels))
+    } else {
+        Err("The watch panel placeholder is missing!".into())
+    }
 }
 
 fn save_layout(path: &Path, content: &str) -> Result<(), Box<dyn Error>> {
@@ -87,10 +108,8 @@ fn save_layout(path: &Path, content: &str) -> Result<(), Box<dyn Error>> {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
-
     use super::*;
-    use config::{Layout, WatchCommand};
+    use config::{Layout, Watch};
 
     fn normalize_whitespace(input: &str) -> String {
         input.split_whitespace().collect::<Vec<_>>().join(" ")
@@ -104,19 +123,25 @@ mod tests {
         [[layouts]]
         path = "projectA_layout.kdl"
         watch = [
-            { name = "Watcher", command = "npm run watch" },
-            { name = "Dev Server", command = "npm run dev" }
+            { name = "Watcher", command = ["npm", "run", "watch"] },
+            { name = "Dev Server", command = ["npm", "run", "dev"] }
         ]
         "#;
 
         let project_config = parse_config(config).expect("Failed to parse config");
         assert_eq!(
-            project_config.template,
-            "layout_template.kdl"
-                .parse::<PathBuf>()
-                .expect("valid path")
+            project_config.template.into_os_string().to_str(),
+            "layout_template.kdl".into()
         );
         assert_eq!(project_config.layouts.len(), 1);
+        assert_eq!(
+            project_config.layouts[0]
+                .path
+                .clone()
+                .into_os_string()
+                .to_str(),
+            "projectA_layout.kdl".into()
+        );
         assert_eq!(project_config.layouts[0].watch.len(), 2);
     }
 
@@ -131,18 +156,26 @@ mod tests {
         let layout = Layout {
             path: "test.kdl".parse().expect("valid path"),
             watch: vec![
-                WatchCommand {
+                Watch {
                     name: "Watcher".to_string(),
-                    command: "npm run watch".to_string(),
+                    command: vec!["npm".into(), "run".into(), "watch".into()],
+                    broadcast: false,
                 },
-                WatchCommand {
+                Watch {
                     name: "Dev Server".to_string(),
-                    command: "npm run dev --host 0.0.0.0".to_string(),
+                    command: vec![
+                        "npm".into(),
+                        "run".into(),
+                        "dev".into(),
+                        "--host".into(),
+                        "0.0.0.0".into(),
+                    ],
+                    broadcast: false,
                 },
             ],
         };
 
-        let result = render_layout(template, &layout);
+        let result = render_layout(template, &layout).expect("layout to render");
         let expected = r#"
         layout {
             pane name="Watcher" command="npm" {
@@ -171,9 +204,10 @@ mod tests {
             template: "template.kdl".parse().expect("valid path"),
             layouts: vec![Layout {
                 path: path.clone(),
-                watch: vec![WatchCommand {
+                watch: vec![Watch {
                     name: "Test".to_string(),
-                    command: "echo Hello".to_string(),
+                    command: vec!["echo".into(), "Hello".into()],
+                    broadcast: false,
                 }],
             }],
         };
@@ -190,6 +224,185 @@ mod tests {
         assert!(
             normalize_whitespace(&generated_content).contains(&normalize_whitespace(expected_pane)),
             "Generated content does not match expected output"
+        );
+    }
+
+    #[test]
+    fn test_render_layout_with_broadcast() {
+        let template = r#"
+        layout {
+            ${WATCH_PANELS}
+        }
+        "#;
+
+        let layout = Layout {
+            path: "test.kdl".parse().expect("valid path"),
+            watch: vec![
+                Watch {
+                    name: "Dev".to_string(),
+                    command: vec![
+                        "yarn".into(),
+                        "dev".into(),
+                        "--host".into(),
+                        "0.0.0.0".into(),
+                    ],
+                    broadcast: true,
+                },
+                Watch {
+                    name: "Lint".to_string(),
+                    command: vec!["yarn".into(), "watch".into()],
+                    broadcast: false,
+                },
+            ],
+        };
+
+        let result = render_layout(template, &layout).expect("layout to render");
+        let expected = r#"
+        layout {
+            pane name="Dev" command="script" {
+                args "-fec" "yarn' dev --host 0.0.0.0'" ".broadcast"
+            }
+            pane name="Lint" command="yarn" {
+                args "watch"
+            }
+        }
+        "#;
+
+        assert_eq!(
+            normalize_whitespace(&result),
+            normalize_whitespace(expected),
+            "Rendered layout with secure broadcast does not match expected output"
+        );
+    }
+
+    #[test]
+    fn test_empty_layouts() {
+        let config = r#"
+        template = "layout_template.kdl"
+        layouts = []
+        "#;
+
+        let project_config = parse_config(config).expect("Failed to parse config");
+        assert_eq!(project_config.layouts.len(), 0, "Layouts should be empty");
+    }
+
+    #[test]
+    fn test_missing_placeholder_in_template() {
+        let template = r#"
+        layout {
+            pane name="Placeholder Missing"
+        }
+        "#;
+
+        let layout = Layout {
+            path: "test.kdl".parse().expect("valid path"),
+            watch: vec![Watch {
+                name: "Test".to_string(),
+                command: vec!["echo".into(), "Hello".into()],
+                broadcast: false,
+            }],
+        };
+
+        let result = render_layout(template, &layout);
+        assert!(
+            result.is_err(),
+            "Rendering should fail due to missing placeholder"
+        );
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "The watch panel placeholder is missing!",
+            "Expected error for missing placeholder"
+        );
+    }
+
+    #[test]
+    fn test_commands_with_special_characters() {
+        let template = r#"
+        layout {
+            ${WATCH_PANELS}
+        }
+        "#;
+
+        let layout = Layout {
+            path: "test.kdl".parse().expect("valid path"),
+            watch: vec![Watch {
+                name: "Special Characters".to_string(),
+                command: vec![
+                    "echo".into(),
+                    "Hello World".into(),
+                    "\"Quoted Arg\"".into(),
+                    "Semi;Colon".into(),
+                ],
+                broadcast: false,
+            }],
+        };
+
+        let result = render_layout(template, &layout).expect("layout to render");
+        let expected = r#"
+        layout {
+            pane name="Special Characters" command="echo" {
+                args "Hello' World'" "'"Quoted Arg"'" "Semi';Colon'"
+            }
+        }
+        "#;
+
+        assert_eq!(
+            normalize_whitespace(&result),
+            normalize_whitespace(expected),
+            "Rendered layout does not match expected output for special characters"
+        );
+    }
+
+    #[test]
+    fn test_invalid_toml_config() {
+        let invalid_config = r#"
+        template = "layout_template.kdl"
+        [[layouts]]
+        path = "projectA_layout.kdl"
+        watch = [
+            { name = "Watcher", command = "not-an-array" } # Invalid command format
+        ]
+        "#;
+
+        let result = parse_config(invalid_config);
+        assert!(result.is_err(), "Parsing should fail for invalid TOML");
+    }
+
+    #[test]
+    fn test_broadcast_commands_with_complex_arguments() {
+        let template = r#"
+        layout {
+            ${WATCH_PANELS}
+        }
+        "#;
+
+        let layout = Layout {
+            path: "test.kdl".parse().expect("valid path"),
+            watch: vec![Watch {
+                name: "Broadcast Test".to_string(),
+                command: vec![
+                    "echo".into(),
+                    "Complex".into(),
+                    "Arguments".into(),
+                    "Here".into(),
+                ],
+                broadcast: true,
+            }],
+        };
+
+        let result = render_layout(template, &layout).expect("layout to render");
+        let expected = r#"
+        layout {
+            pane name="Broadcast Test" command="script" {
+                args "-fec" "echo' Complex Arguments Here'" ".broadcast"
+            }
+        }
+        "#;
+
+        assert_eq!(
+            normalize_whitespace(&result),
+            normalize_whitespace(expected),
+            "Broadcast layout does not match expected output for complex arguments"
         );
     }
 }
