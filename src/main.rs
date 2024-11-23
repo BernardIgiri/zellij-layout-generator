@@ -42,47 +42,59 @@ fn generate_layouts(project_config: &Config, template: &str) -> Result<(), Box<d
     Ok(())
 }
 
+fn extract_args(command: &[String], quote: bool) -> Result<(String, String), Box<dyn Error>> {
+    if command.is_empty() {
+        return Err("Command cannot be empty.".into());
+    }
+    let executable = String::from_utf8(command[0].quoted(Sh))?;
+    let args = command[1..]
+        .iter()
+        .map(|arg| {
+            let arg = arg.quoted(Sh);
+            let arg = String::from_utf8(arg)?;
+            let arg = if quote { format!("\"{}\"", arg) } else { arg };
+            Ok(arg)
+        })
+        .collect::<Result<Vec<_>, Box<dyn Error>>>()?;
+
+    let args = args.join(" ");
+    Ok((executable, args))
+}
+
 fn render_layout(template: &str, layout: &Layout) -> Result<String, Box<dyn Error>> {
     let watch_panels = layout
         .watch
         .iter()
         .map(|watch| {
             // Adjust command based on the broadcast flag
-            let mut command = watch.command.clone();
-            if watch.broadcast {
-                command = vec![
-                    "script".into(),
-                    "-fec".into(),
-                    command.join(" "),
-                    ".broadcast".into(),
-                ];
-            }
-
-            let executable = &command[0];
-            let args = &command[1..];
-
-            Ok(if args.is_empty() {
-                // No args, render command on the same line
+            let command = watch.command.clone();
+            Ok(if watch.broadcast {
+                let (executable, args) = extract_args(&command, false)?;
                 format!(
-                    "pane name=\"{}\" command=\"{}\"",
+                    "pane name=\"{}\" command=\"script\" {{\n    args \"-fec\" \"{} {}\" \".broadcast\"\n}}",
                     watch.name,
-                    String::from_utf8(executable.quoted(Sh))?
+                    executable,
+                    args
                 )
             } else {
-                // Escape and format arguments safely
-                let args_formatted = args
-                    .iter()
-                    .map(|arg| arg.quoted(Sh))
-                    .map(|arg: Vec<u8>| String::from_utf8(arg).expect("valid param"))
-                    .map(|arg| format!("\"{}\"", arg))
-                    .collect::<Vec<_>>()
-                    .join(" ");
-                format!(
-                    "pane name=\"{}\" command=\"{}\" {{\n    args {}\n}}",
-                    watch.name,
-                    String::from_utf8(executable.quoted(Sh)).expect("valid command"),
-                    args_formatted
-                )
+                let (executable, args) = extract_args(&command, true)?;
+
+                if args.is_empty() {
+                    // No args, render command on the same line
+                    format!(
+                        "pane name=\"{}\" command=\"{}\"",
+                        watch.name,
+                        executable
+                    )
+                } else {
+                    // Escape and format arguments safely
+                    format!(
+                        "pane name=\"{}\" command=\"{}\" {{\n    args {}\n}}",
+                        watch.name,
+                        executable,
+                        args
+                    )
+                }
             })
         })
         .collect::<Result<Vec<_>, Box<dyn Error>>>()?;
@@ -260,7 +272,7 @@ mod tests {
         let expected = r#"
         layout {
             pane name="Dev" command="script" {
-                args "-fec" "yarn' dev --host 0.0.0.0'" ".broadcast"
+                args "-fec" "yarn dev --host 0.0.0.0" ".broadcast"
             }
             pane name="Lint" command="yarn" {
                 args "watch"
@@ -380,12 +392,7 @@ mod tests {
             path: "test.kdl".parse().expect("valid path"),
             watch: vec![Watch {
                 name: "Broadcast Test".to_string(),
-                command: vec![
-                    "echo".into(),
-                    "Complex".into(),
-                    "Arguments".into(),
-                    "Here".into(),
-                ],
+                command: vec!["echo".into(), "Complex Arguments".into(), "Here".into()],
                 broadcast: true,
             }],
         };
@@ -394,7 +401,7 @@ mod tests {
         let expected = r#"
         layout {
             pane name="Broadcast Test" command="script" {
-                args "-fec" "echo' Complex Arguments Here'" ".broadcast"
+                args "-fec" "echo Complex' Arguments' Here" ".broadcast"
             }
         }
         "#;
