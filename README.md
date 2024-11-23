@@ -10,7 +10,7 @@ Zellij Layout Generator is a CLI tool for generating custom Zellij layout files 
 - **Broadcast watch commands**: Add the `broadcast` flag to any watch command to automatically enable `script -f` broadcasting for that pane. This will allow you to duplicate the output of shell commands to other terminals.
    - Example:
      ```
-    { name = "Dev Server", command = ["npm", "run", "dev"], broadcast = true }
+     { name = "Dev Server", command = ["npm", "run", "dev"], broadcast = true }
      ```
 
 ## Example
