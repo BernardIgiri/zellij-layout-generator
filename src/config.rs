@@ -19,5 +19,5 @@ pub struct Layout {
 #[derive(Deserialize)]
 pub struct Config {
     pub template: PathBuf,
-    pub layouts: Vec<Layout>,
+    pub layout: Vec<Layout>,
 }

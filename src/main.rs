@@ -35,7 +35,7 @@ fn parse_config(config: &str) -> Result<Config, Box<dyn Error>> {
 }
 
 fn generate_layouts(project_config: &Config, template: &str) -> Result<(), Box<dyn Error>> {
-    for layout in &project_config.layouts {
+    for layout in &project_config.layout {
         let rendered_layout = render_layout(template, layout)?;
         save_layout(layout.path.as_path(), &rendered_layout)?;
     }
@@ -120,7 +120,7 @@ mod tests {
         let config = r#"
         template = "layout_template.kdl"
 
-        [[layouts]]
+        [[layout]]
         path = "projectA_layout.kdl"
         watch = [
             { name = "Watcher", command = ["npm", "run", "watch"] },
@@ -133,16 +133,16 @@ mod tests {
             project_config.template.into_os_string().to_str(),
             "layout_template.kdl".into()
         );
-        assert_eq!(project_config.layouts.len(), 1);
+        assert_eq!(project_config.layout.len(), 1);
         assert_eq!(
-            project_config.layouts[0]
+            project_config.layout[0]
                 .path
                 .clone()
                 .into_os_string()
                 .to_str(),
             "projectA_layout.kdl".into()
         );
-        assert_eq!(project_config.layouts[0].watch.len(), 2);
+        assert_eq!(project_config.layout[0].watch.len(), 2);
     }
 
     #[test]
@@ -202,7 +202,7 @@ mod tests {
 
         let project_config = Config {
             template: "template.kdl".parse().expect("valid path"),
-            layouts: vec![Layout {
+            layout: vec![Layout {
                 path: path.clone(),
                 watch: vec![Watch {
                     name: "Test".to_string(),
@@ -279,11 +279,11 @@ mod tests {
     fn test_empty_layouts() {
         let config = r#"
         template = "layout_template.kdl"
-        layouts = []
+        layout = []
         "#;
 
         let project_config = parse_config(config).expect("Failed to parse config");
-        assert_eq!(project_config.layouts.len(), 0, "Layouts should be empty");
+        assert_eq!(project_config.layout.len(), 0, "Layouts should be empty");
     }
 
     #[test]
@@ -357,7 +357,7 @@ mod tests {
     fn test_invalid_toml_config() {
         let invalid_config = r#"
         template = "layout_template.kdl"
-        [[layouts]]
+        [[layout]]
         path = "projectA_layout.kdl"
         watch = [
             { name = "Watcher", command = "not-an-array" } # Invalid command format
