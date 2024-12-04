@@ -66,7 +66,6 @@ fn render_layout(template: &str, layout: &Layout) -> Result<String, Box<dyn Erro
         .watch
         .iter()
         .map(|watch| {
-            // Adjust command based on the broadcast flag
             let command = watch.command.clone();
             Ok(if watch.broadcast {
                 let (executable, args) = extract_args(&command, false)?;
@@ -78,16 +77,13 @@ fn render_layout(template: &str, layout: &Layout) -> Result<String, Box<dyn Erro
                 )
             } else {
                 let (executable, args) = extract_args(&command, true)?;
-
                 if args.is_empty() {
-                    // No args, render command on the same line
                     format!(
                         "pane name=\"{}\" command=\"{}\"",
                         watch.name,
                         executable
                     )
                 } else {
-                    // Escape and format arguments safely
                     format!(
                         "pane name=\"{}\" command=\"{}\" {{\n    args {}\n}}",
                         watch.name,
