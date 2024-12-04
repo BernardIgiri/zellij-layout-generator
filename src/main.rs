@@ -412,4 +412,37 @@ mod tests {
             "Broadcast layout does not match expected output for complex arguments"
         );
     }
+
+    #[test]
+    fn test_broadcast_commands_with_two_arguments() {
+        let template = r#"
+        layout {
+            ${WATCH_PANELS}
+        }
+        "#;
+
+        let layout = Layout {
+            path: "test.kdl".parse().expect("valid path"),
+            watch: vec![Watch {
+                name: "Broadcast Test".to_string(),
+                command: vec!["yarn".into(), "dev".into()],
+                broadcast: true,
+            }],
+        };
+
+        let result = render_layout(template, &layout).expect("layout to render");
+        let expected = r#"
+        layout {
+            pane name="Broadcast Test" command="script" {
+                args "-fec" "yarn dev" ".broadcast"
+            }
+        }
+        "#;
+
+        assert_eq!(
+            normalize_whitespace(&result),
+            normalize_whitespace(expected),
+            "Broadcast layout does not match expected output for complex arguments"
+        );
+    }
 }
